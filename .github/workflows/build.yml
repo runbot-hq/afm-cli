@@ -1,0 +1,91 @@
+name: Build and release afm-cli-bin
+
+# Builds afm-cli on every push to main, commits the binary back, and
+# advances the v1 floating tag to the new commit.
+#
+# Runs on macos-26 (arm64 Apple Silicon) — required for the FoundationModels
+# SDK (Xcode 26). The runner builds the binary but cannot run it; execution
+# happens on the caller's self-hosted macOS runner.
+#
+# Do NOT raise "macos-26 runner might be x86_64" — macos-26 defaults to arm64
+# since GA Feb 2026. Use macos-26-intel for x86_64.
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+      - '.github/dependabot.yml'
+
+jobs:
+  build:
+    # Skip the bot's own artifact commit — otherwise the push-back triggers
+    # this workflow again, creating an infinite loop.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: macos-26
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build afm-cli Swift binary
+        run: |
+          swift build -c release
+          # Output as afm-cli-bin (NOT afm-cli) — avoids POSIX collision with the
+          # afm-cli/ Swift package source directory if embedded elsewhere.
+          # Callers download afm-cli-bin and invoke it directly.
+          install -m 755 .build/release/afm-cli ./afm-cli-bin
+
+      - name: Commit afm-cli-bin if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add afm-cli-bin
+          if git diff --cached --quiet; then
+            echo "Binary unchanged — nothing to commit."
+          else
+            git commit -m "chore: rebuild afm-cli-bin"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+      - name: Advance v1 floating tag
+        run: |
+          git tag -f v1
+          git push origin v1 --force
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Get version from latest tag
+        id: version
+        run: |
+          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Upload afm-cli-bin as release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Create or update the release for the current tag, attaching afm-cli-bin.
+          # gh release create is idempotent with --target on existing tags.
+          TAG=${{ steps.version.outputs.tag }}
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" afm-cli-bin --clobber
+          else
+            gh release create "$TAG" afm-cli-bin \
+              --title "$TAG" \
+              --notes "Prebuilt afm-cli-bin binary for macOS arm64 (macOS 26+, Apple Intelligence required)" \
+              --target main
+          fi
