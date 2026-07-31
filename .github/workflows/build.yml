@@ -1,7 +1,7 @@
 name: Build and release afm-cli-bin
 
 # Builds afm-cli on every push to main, commits the binary back, and
-# advances the v1 floating tag to the new commit.
+# advances the 'latest' rolling release to the new binary.
 #
 # Runs on macos-26 (arm64 Apple Silicon) — required for the FoundationModels
 # SDK (Xcode 26). The runner builds the binary but cannot run it; execution
@@ -68,24 +68,24 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Get version from latest tag
-        id: version
+      - name: Force-advance 'latest' tag to HEAD
         run: |
-          TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          git tag -f latest
+          git push origin latest --force
 
-      - name: Upload afm-cli-bin as release asset
+      - name: Upsert rolling 'latest' release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Create or update the release for the current tag, attaching afm-cli-bin.
-          # gh release create is idempotent with --target on existing tags.
-          TAG=${{ steps.version.outputs.tag }}
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" afm-cli-bin --clobber
+          # Create the 'latest' release on first run; on subsequent runs just
+          # replace the asset in-place. Using --clobber avoids a delete+recreate
+          # race that would produce a gap in asset availability.
+          if gh release view latest > /dev/null 2>&1; then
+            gh release upload latest afm-cli-bin --clobber
           else
-            gh release create "$TAG" afm-cli-bin \
-              --title "$TAG" \
-              --notes "Prebuilt afm-cli-bin binary for macOS arm64 (macOS 26+, Apple Intelligence required)" \
-              --target main
+            gh release create latest afm-cli-bin \
+              --title "latest" \
+              --notes "Rolling release — always tracks the tip of main. Prebuilt afm-cli-bin binary for macOS arm64 (macOS 26+, Apple Intelligence required). Use a pinned semver tag for reproducible builds." \
+              --target main \
+              --prerelease
           fi
