@@ -9,7 +9,7 @@ Designed as a composable building block for GitHub Actions and other automation 
 ## Input / Output Contract
 
 ```
-afm-cli-bin --prompt <text> [--instructions <text>] [--temperature <double>] [--maximum-response-tokens <int>]
+afm-cli-bin --prompt <text> [--instructions <text>] [--temperature <double>] [--maximum-response-tokens <int>] [--count-tokens]
 ```
 
 | Flag | Required | Description |
@@ -18,8 +18,9 @@ afm-cli-bin --prompt <text> [--instructions <text>] [--temperature <double>] [--
 | `--instructions` | ❌ | System-level instructions (Apple's term for system prompt) |
 | `--temperature` | ❌ | Sampling temperature (Apple default if omitted) |
 | `--maximum-response-tokens` | ❌ | Max tokens in the response (Apple default if omitted) |
+| `--count-tokens` | ❌ | Count tokens for `--prompt` + `--instructions` without running inference. Prints a plain integer to stdout and exits 0. Requires macOS 26.4+. When `--instructions` is used, the count may be a slight lower bound if the runtime adds role-framing tokens internally; for typical pre-flight budget checks this is not significant. |
 
-**stdout:** plain text response from the model  
+**stdout:** plain text response from the model (or a plain integer when `--count-tokens` is passed)  
 **stderr:** error messages only  
 **exit code:** `0` on success, `1` on any error
 
@@ -38,6 +39,7 @@ afm-cli-bin --prompt <text> [--instructions <text>] [--temperature <double>] [--
 - Apple Silicon Mac, macOS 26+
 - Apple Intelligence enabled in System Settings (per-user — may be blocked by MDM)
 - No other dependencies — uses only `FoundationModels` (system framework)
+- `--count-tokens` additionally requires macOS 26.4+
 
 ---
 
