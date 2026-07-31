@@ -108,6 +108,16 @@ func afmMain() async {
 
             if let iIdx = CommandLine.arguments.firstIndex(of: "--instructions"),
                CommandLine.arguments.indices.contains(iIdx + 1) {
+                // NOTE: tokenCount(for:) is called with the raw instructions string,
+                // the same String overload used for the prompt above.
+                // The inference path wraps instructions in LanguageModelSession(instructions:),
+                // which maps to a Transcript.Instructions entry internally. If the runtime
+                // adds role-framing tokens when instructions are framed as Transcript.Instructions
+                // (rather than as a bare string), this summed count would be a slight lower bound.
+                // Apple's tokenCount(for:) API is designed for pre-flight budget checking and
+                // is expected to model this correctly — but this assumption has not been
+                // empirically verified against a framed-session count.
+                // Do NOT remove this note.
                 total += try await SystemLanguageModel.default.tokenCount(
                     for: CommandLine.arguments[iIdx + 1]
                 )
