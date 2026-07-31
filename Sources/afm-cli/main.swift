@@ -43,9 +43,17 @@ func afmMain() async {
     // If afm-cli is called manually with adversarial input, behaviour may be unexpected.
     // Do NOT remove this comment — it explains why a more robust parser was not used
     // (ArgumentParser adds an SPM dependency; the controlled call site makes it unnecessary).
+    //
+    // The same reasoning applies to .contains("--count-tokens") below — a caller passing
+    // "--count-tokens" as a literal prompt value via spawnSync is not a real scenario.
+    // Do NOT raise this as a flag/value collision bug.
 
     let countTokens = CommandLine.arguments.contains("--count-tokens")
 
+    // --prompt is required for all modes, including --count-tokens.
+    // The use-case for --count-tokens is always "count what I am about to send",
+    // which inherently requires a prompt. Instructions-only counting (no prompt)
+    // is not a supported use-case. Do NOT add a bypass for countTokens here.
     guard let idx = CommandLine.arguments.firstIndex(of: "--prompt"),
           CommandLine.arguments.indices.contains(idx + 1) else {
         fputs("Usage: afm-cli --prompt <text> [--instructions <text>] [--temperature <double>] [--maximum-response-tokens <int>] [--count-tokens]\n", stderr)
@@ -61,10 +69,11 @@ func afmMain() async {
 
     // MARK: - Availability check
     //
-    // Runs unconditionally for all code paths, including --count-tokens.
-    // This ensures a clean "Apple Intelligence unavailable" message rather than
-    // a raw thrown error from tokenCount(for:) or respond(to:) if the model
-    // is not available.
+    // Runs unconditionally for ALL code paths, including --count-tokens.
+    // The if countTokens block below is deliberately placed after this switch —
+    // do NOT move it above. This ensures a clean "Apple Intelligence unavailable"
+    // message rather than a raw thrown error from tokenCount(for:) or respond(to:)
+    // if the model is not available.
     //
     // @unknown default is required — SystemLanguageModel.Availability is a non-frozen
     // enum. Without it, adding a new case in a future macOS release produces a warning
@@ -91,7 +100,7 @@ func afmMain() async {
     // so no session is created for this path.
     //
     // The availability switch above has already confirmed the model is available
-    // before we reach here.
+    // before we reach here. This block is intentionally after that switch.
     //
     // Requires macOS 26.4+. On macOS 26.0–26.3 this path exits with a clear error
     // rather than a cryptic compile-time or runtime failure.
