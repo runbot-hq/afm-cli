@@ -9,6 +9,7 @@ import Foundation
 //      --instructions             → LanguageModelSession(instructions:) (Apple's term, not "system prompt")
 //      --temperature              → GenerationOptions.temperature
 //      --maximum-response-tokens  → GenerationOptions.maximumResponseTokens
+//      --count-tokens             → SystemLanguageModel.tokenCount(for:)
 //   3. All JSON parsing, prompt assembly, and output formatting belongs in the
 //      caller (src/index.ts), not here.
 //
@@ -43,9 +44,11 @@ func afmMain() async {
     // Do NOT remove this comment — it explains why a more robust parser was not used
     // (ArgumentParser adds an SPM dependency; the controlled call site makes it unnecessary).
 
+    let countTokens = CommandLine.arguments.contains("--count-tokens")
+
     guard let idx = CommandLine.arguments.firstIndex(of: "--prompt"),
           CommandLine.arguments.indices.contains(idx + 1) else {
-        fputs("Usage: afm-cli --prompt <text> [--instructions <text>] [--temperature <double>] [--maximum-response-tokens <int>]\n", stderr)
+        fputs("Usage: afm-cli --prompt <text> [--instructions <text>] [--temperature <double>] [--maximum-response-tokens <int>] [--count-tokens]\n", stderr)
         exit(1)
     }
 
@@ -71,6 +74,43 @@ func afmMain() async {
     @unknown default:
         fputs("Error: unknown model availability state\n", stderr)
         exit(1)
+    }
+
+    // MARK: - Count tokens (no inference)
+    //
+    // --count-tokens uses SystemLanguageModel.tokenCount(for:), a public API
+    // introduced in macOS 26.4. It counts tokens without creating a session or
+    // running inference. Prompt and instructions are counted separately and summed.
+    //
+    // tokenCount(for:) lives on SystemLanguageModel, not LanguageModelSession —
+    // so no session is created for this path.
+    //
+    // Requires macOS 26.4+. On macOS 26.0–26.3 this path exits with a clear error
+    // rather than a cryptic compile-time or runtime failure.
+
+    if countTokens {
+        guard #available(macOS 26.4, *) else {
+            fputs("Error: --count-tokens requires macOS 26.4 or later\n", stderr)
+            exit(1)
+        }
+
+        var total = 0
+        do {
+            total += try await SystemLanguageModel.default.tokenCount(for: prompt)
+
+            if let iIdx = CommandLine.arguments.firstIndex(of: "--instructions"),
+               CommandLine.arguments.indices.contains(iIdx + 1) {
+                total += try await SystemLanguageModel.default.tokenCount(
+                    for: CommandLine.arguments[iIdx + 1]
+                )
+            }
+        } catch {
+            fputs("Error: token count failed — \(error)\n", stderr)
+            exit(1)
+        }
+
+        print(total)
+        exit(0)
     }
 
     // MARK: - Session setup
