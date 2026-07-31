@@ -61,6 +61,11 @@ func afmMain() async {
 
     // MARK: - Availability check
     //
+    // Runs unconditionally for all code paths, including --count-tokens.
+    // This ensures a clean "Apple Intelligence unavailable" message rather than
+    // a raw thrown error from tokenCount(for:) or respond(to:) if the model
+    // is not available.
+    //
     // @unknown default is required — SystemLanguageModel.Availability is a non-frozen
     // enum. Without it, adding a new case in a future macOS release produces a warning
     // and could cause undefined behaviour. Do NOT remove it.
@@ -84,6 +89,9 @@ func afmMain() async {
     //
     // tokenCount(for:) lives on SystemLanguageModel, not LanguageModelSession —
     // so no session is created for this path.
+    //
+    // The availability switch above has already confirmed the model is available
+    // before we reach here.
     //
     // Requires macOS 26.4+. On macOS 26.0–26.3 this path exits with a clear error
     // rather than a cryptic compile-time or runtime failure.
